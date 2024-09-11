@@ -37,16 +37,6 @@ func _ready():
 
 
 func _process(delta):
-	for group in grid.groups.values():
-		for i in range(group_size * group_size):
-			group[i].v += delta * gravity.y
-			group[i].u += delta * gravity.x
-
-	log_cursor_grid_position()
-	queue_redraw()
-
-
-func _physics_process(delta):
 	var used_groups = {}
 
 	for i in range(num_particles):
@@ -58,7 +48,7 @@ func _physics_process(delta):
 		if not group_position in grid.groups:
 			grid.initialize_group(group_position)
 
-		positions[i] += grid.interpolate_velocity_at_point(positions[i]) * delta
+		positions[i] += grid.interpolate_cell_velocity_at_point(positions[i]) * delta
 		positions[i] = handle_collisions(positions[i])
 
 	if Engine.get_frames_drawn() % 10 == 0:
@@ -66,7 +56,34 @@ func _physics_process(delta):
 			if not group in used_groups:
 				grid.groups.erase(group)
 
+	log_cursor_grid_position()
+	queue_redraw()
 
+
+func _physics_process(delta):
+	if grid.groups.is_empty():
+			return
+	
+	for group_position in grid.groups:
+		for i in range(group_size):
+			for j in range(group_size):
+				var cell_center_position = grid.convert_cell_to_world(group_position, Vector2i(i, j))
+
+				var u_position = cell_center_position
+				u_position.x -= 0.5 * cell_size
+
+				var v_position = cell_center_position
+				v_position.y -= 0.5 * cell_size
+
+				var group = grid.groups[group_position]
+
+				var u_a = advect_velocity(delta, u_position).x
+				var v_a = advect_velocity(delta, v_position).y
+
+				group[i * group_size + j].u = u_a + delta * gravity.x
+				group[i * group_size + j].v = v_a + delta * gravity.y
+
+	
 func _draw():
 	# Draw particles
 	for i in range(num_particles):
@@ -105,10 +122,18 @@ func draw_group(origin: Vector2):
 func log_cursor_grid_position():
 	if is_log_cursor_grid_position:
 		var label = $Control/DebugInfo
-		var cursor_positions = grid.cursor_position_to_grid()
+		var cursor_positions = convert_cursor_position_to_grid()
 		label.text = "Group: {0}\nCell: {1}\nWorld: {2}".format(cursor_positions)
 	else:
 		$Control/DebugInfo.text = ""
+
+
+func convert_cursor_position_to_grid() -> Array:
+	var cursor_pos = get_global_mouse_position()
+	var grid_pos = grid.convert_world_to_grid(cursor_pos)
+	var world_pos = grid.convert_cell_to_world(grid_pos[0], grid_pos[1])
+	
+	return grid_pos + [world_pos]
 
 ########################### Particles ###########################
 func handle_collisions(particle_position: Vector2) -> Vector2:
@@ -137,3 +162,17 @@ func initialize_particles():
 				rng.randf_range(container_center.y - half_dimensions.y, container_center.y + half_dimensions.y)
 			)
 		)
+
+func advect_velocity(time_step: float, particle_position: Vector2) -> Vector2:
+	var current_velocity = grid.interpolate_cell_velocity_at_point(particle_position)
+
+	var mid_position = particle_position - 0.5 * time_step * current_velocity
+
+	var mid_velocity = grid.interpolate_cell_velocity_at_point(mid_position)
+	
+	if mid_velocity == Vector2():
+		mid_velocity = grid.interpolate_velocity_at_point(mid_position, current_velocity)
+
+	var previous_position = particle_position - time_step * mid_velocity
+
+	return grid.interpolate_velocity_at_point(current_velocity, previous_position)

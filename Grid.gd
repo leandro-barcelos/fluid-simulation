@@ -64,12 +64,15 @@ func convert_cell_to_world(group_position: Vector2i, cell_position: Vector2i) ->
 	return Vector2(offset, offset) + (Vector2(group_position) * group_size + Vector2(cell_position)) * cell_size
 
 
-func interpolate_velocity_at_point(world_point) -> Vector2:
+func interpolate_cell_velocity_at_point(world_point: Vector2) -> Vector2:
 	var grid_position = convert_world_to_grid(world_point)
 	var group_position = grid_position[0]
 	var cell_position = grid_position[1]
 
 	var current_cell = get_cell_in_group(group_position, cell_position)
+	
+	if current_cell == null:
+		return Vector2()
 
 	# Getting the right cell's u
 	var right_cell: Cell
@@ -117,9 +120,16 @@ func interpolate_velocity_at_point(world_point) -> Vector2:
 	return Vector2(u_interpolated, v_interpolated)
 
 
-func convert_cursor_position_to_grid() -> Array:
-	var cursor_pos = get_global_mouse_position()
-	var grid_pos = convert_world_to_grid(cursor_pos)
-	var world_pos = convert_cell_to_world(grid_pos[0], grid_pos[1])
-	
-	return grid_pos + [world_pos]
+func interpolate_velocity_at_point(velocity: Vector2, world_point: Vector2) -> Vector2:
+	var grid_position = convert_world_to_grid(world_point)
+	var group_position = grid_position[0]
+	var cell_position = grid_position[1]
+
+	# Get point's position relative to the cell
+	var cell_origin = convert_cell_to_world(group_position, cell_position)
+	var half_cell_size = cell_size / 2
+	var velocity_origin = cell_origin - Vector2(half_cell_size, half_cell_size) # upper-left corner
+
+	var relative_position = (world_point - velocity_origin) / cell_size
+
+	return velocity * relative_position
