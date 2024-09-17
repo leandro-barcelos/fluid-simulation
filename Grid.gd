@@ -3,10 +3,15 @@ extends Node2D
 # Dynamic Sparse Grid
 class_name Grid
 
+const RIGHT = Vector2i(1, 0)
+const LEFT = Vector2i(-1, 0)
+const BOTTOM = Vector2i(0, 1)
+const TOP = Vector2i(0, -1)
+
 class Cell:
 	var pressure: float = 0
-	var u: float = 0
-	var v: float = 0
+	var x_velocity: float = 0
+	var y_velocity: float = 0
 
 # Grids are divided in groups of dimentions group_size x group_size
 var groups: Dictionary = {}
@@ -77,130 +82,140 @@ func convert_cell_to_world(group_position: Vector2i, cell_position: Vector2i) ->
 	var offset = -((group_size / 2.0 - 0.5) * cell_size) # offset of the world origin to the grid origin
 	return Vector2(offset, offset) + (Vector2(group_position) * group_size + Vector2(cell_position)) * cell_size
 
+func get_neighboring_cell(group_position: Vector2i, cell_position: Vector2i, direction: Vector2i) -> Cell:
+	var new_group_position = group_position
+	var new_cell_position = cell_position
+
+	new_cell_position += direction
+
+	if new_cell_position.x >= group_size:
+		new_cell_position.x = 0
+		new_group_position.x += 1
+	elif new_cell_position.x < 0:
+		new_cell_position.x = group_size - 1
+		new_group_position.x -= 1
+
+	if new_cell_position.y >= group_size:
+		new_cell_position.y = 0
+		new_group_position.y += 1
+	elif new_cell_position.y < 0:
+		new_cell_position.y = group_size - 1
+		new_group_position.y -= 1
+		
+	var neighboring_cell = get_cell_in_group(new_group_position, new_cell_position)
+
+	return neighboring_cell if neighboring_cell != null else get_cell_in_group(group_position, cell_position)
+
 func interpolate_velocity_at_top(group_position: Vector2i, cell_position: Vector2i) -> Vector2:
 	var current_cell = get_cell_in_group(group_position, cell_position)
 	
-	# right cell
-	var right_cell: Cell
-	var right_group_position = group_position
-	var right_cell_position = cell_position
-
-	if cell_position.x + 1 < group_size:
-		right_cell_position.x += 1
-	else:
-		right_group_position += Vector2i(1, 0)
-		right_cell_position = Vector2i(0, cell_position.y)
-
-	right_cell = get_cell_in_group(right_group_position, right_cell_position)
+	var right_cell = get_neighboring_cell(group_position, cell_position, RIGHT)
 	
-	# Upper cell
-	var upper_cell: Cell
-	var upper_group_position = group_position
-	var upper_cell_position = cell_position
-
-	if cell_position.y - 1 > 0:
-		upper_cell_position.y -= 1
-	else:
-		upper_group_position -= Vector2i(0, 1)
-		upper_cell_position = Vector2i(cell_position.x, group_size - 1)
-
-	upper_cell = get_cell_in_group(upper_group_position, upper_cell_position)
+	var upper_cell = get_neighboring_cell(group_position, cell_position, TOP)
 	
-	# Upper-rigth cell
-	var upper_right_cell: Cell
-	var upper_right_group_position = upper_group_position
-	var upper_right_cell_position = upper_cell_position
-
-	if upper_cell_position.x + 1 < group_size:
-		upper_right_cell_position.x += 1
-	else:
-		upper_right_group_position += Vector2i(1, 0)
-		upper_right_cell_position = Vector2i(0, upper_cell_position.y)
-
-	upper_right_cell = get_cell_in_group(upper_right_group_position, upper_right_cell_position)
+	var upper_right_cell = get_neighboring_cell(group_position, cell_position, TOP + RIGHT)
 
 	return Vector2(
-		(current_cell.u + right_cell.u + upper_cell.u + upper_right_cell.u) / 4,
-		current_cell.v
-		)
+		(current_cell.x_velocity + right_cell.x_velocity + upper_cell.x_velocity + upper_right_cell.x_velocity) / 4,
+		current_cell.y_velocity
+	)
 
 func interpolate_velocity_at_left(group_position: Vector2i, cell_position: Vector2i) -> Vector2:
 	var current_cell = get_cell_in_group(group_position, cell_position)
 	
-	# left cell
-	var left_cell: Cell
-	var left_group_position = group_position
-	var left_cell_position = cell_position
-
-	if cell_position.x - 1 > 0:
-		left_cell_position.x -= 1
-	else:
-		left_group_position -= Vector2i(1, 0)
-		left_cell_position = Vector2i(group_size - 1, cell_position.y)
-
-	left_cell = get_cell_in_group(left_group_position, left_cell_position)
+	var left_cell = get_neighboring_cell(group_position, cell_position, LEFT)
 	
-	# bottom cell
-	var bottom_cell: Cell
-	var bottom_group_position = group_position
-	var bottom_cell_position = cell_position
-
-	if cell_position.y + 1 < group_size:
-		bottom_cell_position.y += 1
-	else:
-		bottom_group_position += Vector2i(0, 1)
-		bottom_cell_position = Vector2i(cell_position.x, 0)
-
-	bottom_cell = get_cell_in_group(bottom_group_position, bottom_cell_position)
+	var bottom_cell = get_neighboring_cell(group_position, cell_position, BOTTOM)
 	
-	# bottom-left cell
-	var bottom_left_cell: Cell
-	var bottom_left_group_position = bottom_group_position
-	var bottom_left_cell_position = bottom_cell_position
-
-	if bottom_cell_position.x - 1 > 0:
-		bottom_left_cell_position.x -= 1
-	else:
-		bottom_left_group_position -= Vector2i(1, 0)
-		bottom_left_cell_position = Vector2i(group_size - 1, bottom_cell_position.y)
-
-	bottom_left_cell = get_cell_in_group(bottom_left_group_position, bottom_left_cell_position)
+	var bottom_left_cell = get_neighboring_cell(group_position, cell_position, BOTTOM + LEFT)
 
 	return Vector2(
-		current_cell.u,
-		(current_cell.v + bottom_cell.v + left_cell.v + bottom_left_cell.v) / 4
-		)
+		current_cell.x_velocity,
+		(current_cell.y_velocity + bottom_cell.y_velocity + left_cell.y_velocity + bottom_left_cell.y_velocity) / 4
+	)
 
 func interpolate_velocity_at_center(group_position: Vector2i, cell_position: Vector2i) -> Vector2:
 	var current_cell = get_cell_in_group(group_position, cell_position)
 	
-	# bottom cell
-	var bottom_cell: Cell
-	var bottom_group_position = group_position
-	var bottom_cell_position = cell_position
+	var bottom_cell = get_neighboring_cell(group_position, cell_position, BOTTOM)
 
-	if cell_position.y + 1 < group_size:
-		bottom_cell_position.y += 1
-	else:
-		bottom_group_position += Vector2i(0, 1)
-		bottom_cell_position = Vector2i(cell_position.x, 0)
-
-	bottom_cell = get_cell_in_group(bottom_group_position, bottom_cell_position)
-
-	# right cell
-	var right_cell: Cell
-	var right_group_position = group_position
-	var right_cell_position = cell_position
-
-	if cell_position.x + 1 < group_size:
-		right_cell_position.x += 1
-	else:
-		right_group_position += Vector2i(1, 0)
-		right_cell_position = Vector2i(0, cell_position.y)
-
-	right_cell = get_cell_in_group(right_group_position, right_cell_position)
+	var right_cell = get_neighboring_cell(group_position, cell_position, RIGHT)
 
 	return Vector2(
-		(current_cell.u + bottom_cell.u) / 2,
-		(current_cell.v + right_cell.v) / 2
-		)
+		(current_cell.x_velocity + bottom_cell.x_velocity) / 2,
+		(current_cell.y_velocity + right_cell.y_velocity) / 2
+	)
+
+func interpolate_velocity_at_point(world_point: Vector2) -> Vector2:
+	var grid_position = convert_world_to_grid(world_point)
+	var group_position = grid_position[0]
+	var cell_position = grid_position[1]
+
+	var x_velocities = []
+	var y_velocities = []
+
+	# Get point's position relative to the cell
+	var cell_origin = convert_cell_to_world(group_position, cell_position)
+	var half_cell_size = cell_size / 2
+
+	var relative_position = (world_point - cell_origin) / cell_size
+
+	# Getting current, right and bottom cells (always needed)
+	var current_cell = get_cell_in_group(group_position, cell_position)
+
+	var right_cell = get_neighboring_cell(group_position, cell_position, RIGHT)
+
+	var bottom_cell = get_neighboring_cell(group_position, cell_position, BOTTOM)
+
+	# Get 4 closest x-velocity points
+
+	x_velocities.append(current_cell.x_velocity)
+	x_velocities.append(right_cell.x_velocity)
+
+	if relative_position.y < 0:
+		var upper_cell = get_neighboring_cell(group_position, cell_position, TOP)
+		var upper_right_cell = get_neighboring_cell(group_position, cell_position, TOP + RIGHT)
+
+		x_velocities.append(upper_cell.x_velocity)
+		x_velocities.append(upper_right_cell.x_velocity)
+	else:
+		var bottom_right_cell = get_neighboring_cell(group_position, cell_position, BOTTOM + RIGHT)
+
+		x_velocities.append(bottom_cell.x_velocity)
+		x_velocities.append(bottom_right_cell.x_velocity)
+
+	# Get 4 closest y-velocity points
+
+	y_velocities.append(current_cell.y_velocity)
+	y_velocities.append(bottom_cell.y_velocity)
+
+	if relative_position.x < 0:
+		var left_cell = get_neighboring_cell(group_position, cell_position, LEFT)
+		var bottom_left_cell = get_neighboring_cell(group_position, cell_position, BOTTOM + LEFT)
+
+		y_velocities.append(left_cell.y_velocity)
+		y_velocities.append(bottom_left_cell.y_velocity)
+	else:
+		var bottom_right_cell = get_neighboring_cell(group_position, cell_position, BOTTOM + RIGHT)
+
+		y_velocities.append(right_cell.y_velocity)
+		y_velocities.append(bottom_right_cell.y_velocity)
+
+	# Perform bilinear interpolation on both x and y velocities
+	var interpolated_u = bilinear_interpolate(x_velocities, relative_position)
+	var interpolated_v = bilinear_interpolate(y_velocities, relative_position)
+
+	return Vector2(interpolated_u, interpolated_v)
+
+func bilinear_interpolate(velocities: Array, relative_position: Vector2) -> float:
+	var v00 = velocities[0]
+	var v10 = velocities[1] 
+	var v01 = velocities[2]
+	var v11 = velocities[3]
+
+	var u_x = relative_position.x
+	var u_y = relative_position.y
+
+	var interpolated_value = v00 * (1 - u_x) * (1 - u_y) + v10 * u_x * (1 - u_y) + v01 * (1 - u_x) * u_y + v11 * u_x * u_y
+
+	return interpolated_value
