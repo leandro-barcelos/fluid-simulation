@@ -12,10 +12,16 @@ class Cell:
 var groups: Dictionary = {}
 var group_size: int # Size in number of cells
 var cell_size: float
+var grid_size: int
 
-func _init(group_size_: int, cell_size_: float):
+func _init(grid_size_: int, group_size_: int, cell_size_: float):
 	self.cell_size = cell_size_
 	self.group_size = group_size_
+	self.grid_size = grid_size_
+	
+	for i in range(grid_size):
+		for j in range(grid_size):
+			initialize_group(Vector2i(i, j))
 
 
 # Returns a cell given its group and position in that group
@@ -24,6 +30,14 @@ func get_cell_in_group(group_position: Vector2i, cell_position: Vector2i) -> Cel
 		return groups[group_position][(cell_position.x * group_size) + cell_position.y]
 		
 	return null
+
+
+func get_central_position() -> Vector2:
+	var half_group_size = (group_size * cell_size) / 2
+	var upper_rigth_corner = Vector2(-half_group_size, -half_group_size)
+	
+	var half_grid_size = (grid_size * group_size * cell_size) / 2
+	return upper_rigth_corner + Vector2(half_grid_size, half_grid_size)
 
 
 func initialize_group(group_position: Vector2i):
@@ -63,18 +77,10 @@ func convert_cell_to_world(group_position: Vector2i, cell_position: Vector2i) ->
 	var offset = -((group_size / 2.0 - 0.5) * cell_size) # offset of the world origin to the grid origin
 	return Vector2(offset, offset) + (Vector2(group_position) * group_size + Vector2(cell_position)) * cell_size
 
-
-func interpolate_cell_velocity_at_point(world_point: Vector2) -> Vector2:
-	var grid_position = convert_world_to_grid(world_point)
-	var group_position = grid_position[0]
-	var cell_position = grid_position[1]
-
+func interpolate_velocity_at_top(group_position: Vector2i, cell_position: Vector2i) -> Vector2:
 	var current_cell = get_cell_in_group(group_position, cell_position)
 	
-	if current_cell == null:
-		return Vector2()
-
-	# Getting the right cell's u
+	# right cell
 	var right_cell: Cell
 	var right_group_position = group_position
 	var right_cell_position = cell_position
@@ -86,11 +92,89 @@ func interpolate_cell_velocity_at_point(world_point: Vector2) -> Vector2:
 		right_cell_position = Vector2i(0, cell_position.y)
 
 	right_cell = get_cell_in_group(right_group_position, right_cell_position)
+	
+	# Upper cell
+	var upper_cell: Cell
+	var upper_group_position = group_position
+	var upper_cell_position = cell_position
 
-	if right_cell == null:
-		right_cell = current_cell
+	if cell_position.y - 1 > 0:
+		upper_cell_position.y -= 1
+	else:
+		upper_group_position -= Vector2i(0, 1)
+		upper_cell_position = Vector2i(cell_position.x, group_size - 1)
 
-	# Getting the bottom cell's v
+	upper_cell = get_cell_in_group(upper_group_position, upper_cell_position)
+	
+	# Upper-rigth cell
+	var upper_right_cell: Cell
+	var upper_right_group_position = upper_group_position
+	var upper_right_cell_position = upper_cell_position
+
+	if upper_cell_position.x + 1 < group_size:
+		upper_right_cell_position.x += 1
+	else:
+		upper_right_group_position += Vector2i(1, 0)
+		upper_right_cell_position = Vector2i(0, upper_cell_position.y)
+
+	upper_right_cell = get_cell_in_group(upper_right_group_position, upper_right_cell_position)
+
+	return Vector2(
+		(current_cell.u + right_cell.u + upper_cell.u + upper_right_cell.u) / 4,
+		current_cell.v
+		)
+
+func interpolate_velocity_at_left(group_position: Vector2i, cell_position: Vector2i) -> Vector2:
+	var current_cell = get_cell_in_group(group_position, cell_position)
+	
+	# left cell
+	var left_cell: Cell
+	var left_group_position = group_position
+	var left_cell_position = cell_position
+
+	if cell_position.x - 1 > 0:
+		left_cell_position.x -= 1
+	else:
+		left_group_position -= Vector2i(1, 0)
+		left_cell_position = Vector2i(group_size - 1, cell_position.y)
+
+	left_cell = get_cell_in_group(left_group_position, left_cell_position)
+	
+	# bottom cell
+	var bottom_cell: Cell
+	var bottom_group_position = group_position
+	var bottom_cell_position = cell_position
+
+	if cell_position.y + 1 < group_size:
+		bottom_cell_position.y += 1
+	else:
+		bottom_group_position += Vector2i(0, 1)
+		bottom_cell_position = Vector2i(cell_position.x, 0)
+
+	bottom_cell = get_cell_in_group(bottom_group_position, bottom_cell_position)
+	
+	# bottom-left cell
+	var bottom_left_cell: Cell
+	var bottom_left_group_position = bottom_group_position
+	var bottom_left_cell_position = bottom_cell_position
+
+	if bottom_cell_position.x - 1 > 0:
+		bottom_left_cell_position.x -= 1
+	else:
+		bottom_left_group_position -= Vector2i(1, 0)
+		bottom_left_cell_position = Vector2i(group_size - 1, bottom_cell_position.y)
+
+	bottom_left_cell = get_cell_in_group(bottom_left_group_position, bottom_left_cell_position)
+
+	return Vector2(
+		current_cell.u,
+		(current_cell.v + bottom_cell.v + left_cell.v + bottom_left_cell.v) / 4
+		)
+
+func interpolate_velocity_at_center(group_position: Vector2i, cell_position: Vector2i) -> Vector2:
+	var current_cell = get_cell_in_group(group_position, cell_position)
+	
+	# bottom cell
 	var bottom_cell: Cell
 	var bottom_group_position = group_position
 	var bottom_cell_position = cell_position
@@ -103,33 +187,20 @@ func interpolate_cell_velocity_at_point(world_point: Vector2) -> Vector2:
 
 	bottom_cell = get_cell_in_group(bottom_group_position, bottom_cell_position)
 
-	if bottom_cell == null:
-		bottom_cell = current_cell
+	# right cell
+	var right_cell: Cell
+	var right_group_position = group_position
+	var right_cell_position = cell_position
 
-	# Get point's position relative to the cell
-	var cell_origin = convert_cell_to_world(group_position, cell_position)
-	var half_cell_size = cell_size / 2
-	var velocity_origin = cell_origin - Vector2(half_cell_size, half_cell_size) # upper-left corner
+	if cell_position.x + 1 < group_size:
+		right_cell_position.x += 1
+	else:
+		right_group_position += Vector2i(1, 0)
+		right_cell_position = Vector2i(0, cell_position.y)
 
-	var relative_position = (world_point - velocity_origin) / cell_size
+	right_cell = get_cell_in_group(right_group_position, right_cell_position)
 
-	# Get interpolated components
-	var u_interpolated = lerp(current_cell.u, right_cell.u, relative_position.x)
-	var v_interpolated = lerp(current_cell.v, bottom_cell.v, relative_position.y)
-
-	return Vector2(u_interpolated, v_interpolated)
-
-
-func interpolate_velocity_at_point(velocity: Vector2, world_point: Vector2) -> Vector2:
-	var grid_position = convert_world_to_grid(world_point)
-	var group_position = grid_position[0]
-	var cell_position = grid_position[1]
-
-	# Get point's position relative to the cell
-	var cell_origin = convert_cell_to_world(group_position, cell_position)
-	var half_cell_size = cell_size / 2
-	var velocity_origin = cell_origin - Vector2(half_cell_size, half_cell_size) # upper-left corner
-
-	var relative_position = (world_point - velocity_origin) / cell_size
-
-	return velocity * relative_position
+	return Vector2(
+		(current_cell.u + bottom_cell.u) / 2,
+		(current_cell.v + right_cell.v) / 2
+		)
